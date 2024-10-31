@@ -5,6 +5,7 @@ package groups
 
 import (
 	"context"
+	"log"
 	"strings"
 	"time"
 
@@ -105,13 +106,27 @@ func groupMemberResourceCreate(ctx context.Context, d *pluginsdk.ResourceData, m
 }
 
 func groupMemberResourceRead(ctx context.Context, d *pluginsdk.ResourceData, meta interface{}) pluginsdk.Diagnostics {
-	//client := meta.(*clients.Client).Groups.GroupMemberClientBeta
+	client := meta.(*clients.Client).Groups.GroupMemberClientBeta
 
 	resourceId, err := parse.GroupMemberID(d.Id())
 	if err != nil {
 		return tf.ErrorDiagPathF(err, "id", "Parsing Group Member ID %q", d.Id())
 	}
 	id := beta.NewGroupIdMemberID(resourceId.GroupId, resourceId.MemberId)
+
+	// Forcing it to return "gone" if it errors, instead of erroring.
+
+	if member, err := groupGetMember(ctx, client, id); err != nil {
+		log.Printf("[DEBUG] %s - removing from state after an error, probably auth", id)
+		d.SetId("")
+		return nil
+		//return tf.ErrorDiagF(err, "Retrieving member %q for group with object ID: %q", id.DirectoryObjectId, id.GroupId)
+	} else if member == nil {
+		log.Printf("[DEBUG] %s - removing from state", id)
+		d.SetId("")
+		return nil
+	}
+	//This is a test
 
 	// if member, err := groupGetMember(ctx, client, id); err != nil {
 	// 	return tf.ErrorDiagF(err, "Retrieving member %q for group with object ID: %q", id.DirectoryObjectId, id.GroupId)
@@ -143,6 +158,8 @@ func groupMemberResourceDelete(ctx context.Context, d *pluginsdk.ResourceData, m
 	if _, err := client.RemoveMemberRef(ctx, id, memberBeta.DefaultRemoveMemberRefOperationOptions()); err != nil {
 		return tf.ErrorDiagF(err, "Removing %s", id)
 	}
+
+	//Dont bother waiting, just assume its gone...
 
 	// Wait for membership link to be deleted
 	// if err := consistency.WaitForDeletion(ctx, func(ctx context.Context) (*bool, error) {
